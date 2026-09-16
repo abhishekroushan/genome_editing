@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genome Editing</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel2:#243449; --accent:#22d3ee; --accent2:#a78bfa; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --txt:#e2e8f0; --mut:#64748b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:18px 24px; border-bottom:1px solid #334155; background:linear-gradient(90deg,#0f172a,#1e1b4b); position:sticky; top:0; z-index:10;}
+  header h1 { margin:0; font-size:20px; } header h1 span{color:var(--accent);}
+  header p { margin:4px 0 0; color:#94a3b8; font-size:13px;}
+  main { display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px; max-width:1500px; margin:0 auto;}
+  @media (max-width:1000px){ main{grid-template-columns:1fr;} }
+  .card { background:var(--panel); border:1px solid #334155; border-radius:12px; padding:14px; margin-bottom:16px;}
+  .card h2 { margin:0 0 10px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent);}
+  .card h3 { font-size:13px; margin:12px 0 6px; color:#cbd5e1;}
+  label { font-size:12px; color:#94a3b8; display:block; margin:8px 0 4px;}
+  select, input[type=text], input[type=number], textarea { width:100%; background:#0b1220; border:1px solid #334155; color:var(--txt); border-radius:8px; padding:8px; font-size:13px; font-family:inherit;}
+  textarea { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  button { background:var(--accent); color:#06202a; border:0; border-radius:8px; padding:8px 12px; font-weight:700; cursor:pointer; font-size:13px; margin-top:8px;}
+  button.ghost { background:#334155; color:var(--txt);}
+  button.violet { background:var(--accent2); color:#1e1b4b;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  .row { display:flex; gap:8px;} .row > * { flex:1;}
+  .seq-view { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.7; word-break:break-all; background:#0b1220; border:1px solid #334155; border-radius:8px; padding:10px; max-height:260px; overflow:auto; white-space:pre-wrap;}
+  .bA{color:#4ade80;} .bT{color:#f87171;} .bG{color:#60a5fa;} .bC{color:#fbbf24;} .bN{color:#94a3b8;}
+  .hl-guide{background:rgba(34,211,238,.22); border-bottom:2px solid var(--accent); border-radius:3px;}
+  .hl-pam{background:rgba(167,139,250,.35); border-bottom:2px solid var(--accent2); border-radius:3px;}
+  .hl-cut{background:#f472b6; color:#000; padding:0 2px; border-radius:3px; font-weight:800;}
+  .hl-del{background:rgba(248,113,113,.4); text-decoration:line-through;}
+  .hl-ins{background:rgba(52,211,153,.4); font-weight:700;}
+  table { width:100%; border-collapse:collapse; font-size:12px;}
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid #334155;}
+  th{color:#94a3b8; font-weight:600; font-size:11px; text-transform:uppercase;}
+  tr.sel { background:rgba(34,211,238,.12);}
+  tr:hover td{background:rgba(255,255,255,.03); cursor:pointer;}
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:#334155; margin:2px 4px 2px 0;}
+  .pill.ok{background:rgba(52,211,153,.2); color:var(--ok);} .pill.bad{background:rgba(248,113,113,.2); color:var(--bad);} .pill.warn{background:rgba(251,191,36,.2); color:var(--warn);}
+  .stat { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0;}
+  .stat div { background:#0b1220; border:1px solid #334155; border-radius:8px; padding:6px 10px; font-size:12px;}
+  .stat b{color:var(--accent);}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .small{font-size:12px; color:#94a3b8;}
+  .diff-add{color:var(--ok); font-weight:700;} .diff-del{color:var(--bad); text-decoration:line-through;}
+  footer{padding:16px; text-align:center; color:#64748b; font-size:12px;}
+  .tabs{display:flex; gap:6px; margin-bottom:8px;}
+  .tabs button{margin:0;}
+  .tabs button.active{outline:2px solid #fff;}
+  .aa { padding:0 1px; border-radius:3px; }
+  .aa-match { color:#cbd5e1; }
+  .aa-mis { background:rgba(251,191,36,.45); color:#000; font-weight:700; }
+  .aa-gap { background:#334155; color:#64748b; }
+  .aa-stop { background:rgba(248,113,113,.6); color:#000; font-weight:800; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 Genome Editing</h1>
+  <p>Port of <span class="mono">gene_editing.py</span> → interactive lab. Select genome · import FASTA · configure rules · simulate edit · compare translation.</p>
+</header>
+<main>
+  <!-- LEFT COLUMN: inputs -->
+  <div>
+    <div class="card">
+      <h2>a) Genome selection</h2>
+      <label>Standard genomes (demo gene fragments, real partial sequence)</label>
+      <select id="genomeSelect">
+        <option value="brca1_human">Human — BRCA1 fragment (~420 bp)</option>
+        <option value="tp53_human">Human — TP53 fragment (~380 bp)</option>
+        <option value="trp53_mouse">Mouse — Trp53 fragment (~380 bp)</option>
+        <option value="brca1_mouse">Mouse — Brca1 fragment (~400 bp)</option>
+        <option value="lacz_ecoli">E. coli — lacZ fragment (~300 bp)</option>
+        <option value="python_sample">Python script sample (48 bp)</option>
+      </select>
+      <div class="row">
+        <button id="loadDemo">Load selected</button>
+        <button class="ghost" id="shuffleBtn" title="Generate random sequence">Random DNA</button>
+      </div>
+      <h3>Fetch from NCBI (live)</h3>
+      <label>Accession (e.g. NM_007294.4, NC_000017.11, NR_027676)</label>
+      <div class="row">
+        <input type="text" id="ncbiId" placeholder="NM_007294.4" value="NM_007294.4">
+        <button class="violet" id="ncbiBtn" style="flex:0 0 90px">Fetch</button>
+      </div>
+      <div class="small" id="ncbiStatus">Uses NCBI E-utilities efetch (db=nucleotide, rettype=fasta). Needs internet.</div>
+      <h3>b) Import FASTA</h3>
+      <div class="tabs">
+        <button class="ghost active" data-tab="file">File</button>
+        <button class="ghost" data-tab="paste">Paste</button>
+      </div>
+      <div id="tab-file">
+        <input type="file" id="fastaFile" accept=".fa,.fasta,.fna,.txt">
+      </div>
+      <div id="tab-paste" style="display:none">
+        <textarea id="fastaPaste" rows="5" placeholder=">my_gene&#10;ATCGATCGATCG..."></textarea>
+        <button class="ghost" id="parsePaste">Parse pasted FASTA</button>
+      </div>
+      <label>FASTA records in session</label>
+      <select id="recordSelect"></select>
+    </div>
+
+    <div class="card">
+      <h2>c) Editing rules (configurable)</h2>
+      <label>CRISPR system / PAM (regex on 3′ end)</label>
+      <select id="pamSelect">
+        <option value="NGG">SpCas9 — NGG (default, as in Python)</option>
+        <option value="NAG">SpCas9 variant — NAG</option>
+        <option value="NNGRRT">SaCas9 — NNGRRT</option>
+        <option value="TTTV">Cas12a (Cpf1) — TTTV (5′ PAM, rev-comp approx)</option>
+        <option value="NGA">SpCas9-VQR — NGA</option>
+        <option value="custom">Custom PAM regex…</option>
+      </select>
+      <input type="text" id="pamCustom" placeholder="Custom PAM regex e.g. [ATCG]GG" value="[ATCG]GG" style="display:none; margin-top:6px">
+      <div class="row">
+        <div><label>Guide length (nt)</label><input type="number" id="guideLen" value="20" min="10" max="30"></div>
+        <div><label>Cut offset upstream of PAM</label><input type="number" id="cutOffset" value="3" min="0" max="10"></div>
+      </div>
+      <label>Strand scan</label>
+      <select id="strandOpt">
+        <option value="both">Both strands (+ and −)</option>
+        <option value="forward">Forward (+) only — matches Python script</option>
+        <option value="reverse">Reverse (−) only</option>
+      </select>
+      <label>Edit type</label>
+      <select id="editType">
+        <option value="nhej_del">NHEJ knockout — deletion (Python default)</option>
+        <option value="nhej_ins">NHEJ — insertion</option>
+        <option value="sub">Substitution (SNV / block)</option>
+        <option value="hdr">HDR — homology template replacement</option>
+        <option value="cbe">Base edit — CBE (C→T in window)</option>
+        <option value="abe">Base edit — ABE (A→G in window)</option>
+      </select>
+      <div id="params_nhej_del" class="eparams">
+        <label>Deletion length (bp)</label><input type="number" id="delLen" value="1" min="1" max="100">
+      </div>
+      <div id="params_nhej_ins" class="eparams" style="display:none">
+        <label>Inserted sequence</label><input type="text" id="insSeq" value="A" class="mono">
+      </div>
+      <div id="params_sub" class="eparams" style="display:none">
+        <div class="row"><div><label>Length to replace</label><input type="number" id="subLen" value="1" min="1" max="50"></div>
+        <div><label>Replacement</label><input type="text" id="subSeq" value="A" class="mono"></div></div>
+      </div>
+      <div id="params_hdr" class="eparams" style="display:none">
+        <label>HDR donor template (replaces ± flank bp around cut)</label><input type="text" id="hdrTemplate" value="TTTAAA" class="mono">
+        <label>Flank each side (bp)</label><input type="number" id="hdrFlank" value="5" min="1" max="100">
+      </div>
+      <div id="params_cbe" class="eparams" style="display:none">
+        <label>CBE window within guide (1-indexed, e.g. 4-8)</label>
+        <div class="row"><input type="number" id="cbeFrom" value="4"><input type="number" id="cbeTo" value="8"></div>
+      </div>
+      <div id="params_abe" class="eparams" style="display:none">
+        <label>ABE window within guide (1-indexed)</label>
+        <div class="row"><input type="number" id="abeFrom" value="4"><input type="number" id="abeTo" value="8"></div>
+      </div>
+      <button id="rescanBtn" class="violet" style="width:100%">🔬 Rescan guides with these rules</button>
+      <div class="small">Guide finder ports <span class="mono">find_crispr_guides()</span>: <span class="mono">20 nt + NGG</span>, cut = start+17. Reverse strand reported as reverse-complement with cut mapped back.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: outputs -->
+  <div>
+    <div class="card">
+      <h2>Sequence display</h2>
+      <div class="stat" id="seqStats"></div>
+      <div><span class="pill">A</span><span class="pill">T</span><span class="pill">G</span><span class="pill">C</span><span class="small">color-coded · <span class="hl-guide">guide</span> · <span class="hl-pam">PAM</span> · <span class="hl-cut">| cut</span></span></div>
+      <div class="seq-view" id="seqView"></div>
+      <div class="row" style="margin-top:8px">
+        <div><label>View window (± bp around cut)</label><input type="number" id="winSize" value="80" min="20" max="2000"></div>
+        <div><label>Wrap every N bases</label><input type="number" id="wrapN" value="80" min="20" max="200"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Guides found <span id="guideCount" class="pill">0</span></h2>
+      <div class="small">Click a row to select it as the edit target. gRNA shown 5′→3′ with U (as in Python).</div>
+      <div style="max-height:220px; overflow:auto">
+      <table><thead><tr><th>#</th><th>Strand</th><th>gRNA (5′→3′)</th><th>Start</th><th>Cut</th><th>PAM</th></tr></thead>
+      <tbody id="guideBody"></tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>d) Editing result</h2>
+      <div class="stat" id="editStats"></div>
+      <div class="row">
+        <button id="applyEdit" style="flex:2">⚡ Apply edit at selected guide</button>
+        <button id="resetEdit" class="ghost">Reset</button>
+      </div>
+      <h3>Alignment around cut (± window)</h3>
+      <div class="seq-view mono" id="alignView">No edit yet — select a guide and press Apply.</div>
+      <h3>Full edited sequence</h3>
+      <div class="seq-view mono" id="editedView" style="max-height:160px"></div>
+    </div>
+
+    <div class="card">
+      <h2>e) Translation — protein before / after</h2>
+      <label>Reading frame</label>
+      <select id="frameSel">
+        <option value="0">Frame 1 (offset 0)</option>
+        <option value="1">Frame 2 (offset 1)</option>
+        <option value="2">Frame 3 (offset 2)</option>
+        <option value="orf">Longest ORF (ATG→stop) — auto</option>
+      </select>
+      <div class="stat" id="protStats"></div>
+      <div class="row">
+        <div><h3>WT protein</h3><div class="seq-view mono" id="wtProt"></div></div>
+        <div><h3>Edited protein</h3><div class="seq-view mono" id="edProt"></div></div>
+      </div>
+      <div class="small" id="protNote"></div>
+    </div>
+  </div>
+</main>
+<footer>Single self-contained HTML file. Logic mirrors <span class="mono">gene_editing.py</span>: guide scan + <span class="mono">simulate_nhej_knockout()</span>, extended with both strands, HDR, base editors &amp; translation. Not for clinical use.</footer>
+
+<script>
+// ============ demo data ============
+const DEMOS = {
+  brca1_human: { name:"Human BRCA1 fragment", seq:
+    "ATGGATTTATCTGCTCTTCGCGTTGAAGAAGTACAAAATGTCATTAATGCTATGCAGAAAATCTTAGAGTGTCCCATCTGTCTGGAGTTGATCAAGGAACCTGTCTCCACAAAGTGTGACCACATATTTTGCAAATTTTGCATGCTGAAACTTCTCAACCAGAAGAAAGGGCCTTCACAGTGTCCTTTATGTAAGAATGATATAACCAAAAGGTGGCTAGGAGTAACAAATGGGATGGAGGCGTGAGTGGACACTGCTCAGATCCAACGTCCTTTGAGGGTCTCCTATGTCCAGGATCTGATCAGCACTTGAGACACAGAGGTAGGGTTACTGAGGCACAGCCTGTGACATCTGGAGGCCCAGCTCCTACTGTGTGTGAATATGACCTGGATGTGGAGCACAGTGGTCCAGTGAAAGAACACAGACAGAGGCAGAGGCAGTGAGACAACAGAG" },
+  tp53_human: { name:"Human TP53 fragment", seq:
+    "ATGGAGGAGCCGCAGTCAGATCCTAGCGTCGAGCCCCCTCTGAGTCAGGAAACATTTTCAGACGTATGGAAACTACTTCCTGAAAACAACGTTCTGTCCCCCTTGCCGTCCCAAGCAATGGATGATTTGATGCTGTCCCCGGACGATATTGAACAATGGTTCACTGAAGACCCAGGTCCAGATGAAGCTCCCAGAATGCCAGAGGCTGCTCCCCGCGTGGCCATGGCGGGTTCCGGAGGGGCGTGTGCGGCAGCAGGTCTGGAGTCTTCCAGTGGGGACTTGGAGTCCACCGGGCCGGAAACCAGCGTCCGCAATGGCCACTACAAGCAGTCACAGCACATGACGGAGGTTGTGAGGCGCTGCCCCCACCATGAGCGCTGCTCAGATAGCGATGGTCTGGCCCCTCCTCAGCATCTTATCCGAGTGGAAGGAAATTTGCGTGTGGAGTATTTGGATGACAGAAACACTTTTCGACATAGTGTGGTGGTGCCCTATGAGCCGCCTGAG" },
+  trp53_mouse: { name:"Mouse Trp53 fragment", seq:
+    "ATGACTGCCATGGAGGAGTCACAGTCGGATATCAGCCTCGAGCTCCCTCTGAGCCAGGAGACATTTTCAGGCTTATGGAAACTACTTCCTGAAGAACATTTCACAACCCCCGACCTCTCCAAGCAATGGATGATTTGATGCTGTCCCCTGACGATATTGAACAATGGTTTACTGACGAAGCCCCTGGATCTCATCCTCTCCACAGCCTCAGAGGCAACTACCGCCCTCCCAATGCCCTTAATTTTGAAGACAACGACTTGTCTGCAGGTGGAGACACTCGGAGGCAAAAGAGTGTCCGCAGTGCCCATCAAAAGCAGTCACAGCACATGACGGAGGTCGTGAGACGCTGCCCCCACCATGAGCGCTGCTCAGACAGTGACGGTCTGGCCCCACCACAGCATCTTATCTCGGAGGAAGATTCAGTGGCGGAAGATTTACGTGTCGAGTATTTGGATGACAGAAACACTTTTCGACACAGTGTGGTGGTGCCCTATGAGCCACCTGAGGCCGGCTCTGAGT" },
+  brca1_mouse: { name:"Mouse Brca1 fragment", seq:
+    "ATGGATTTATCTGCTCTTCGTGTTGAAGAAGTGCAAAACGTCATCAATGCTATGCAGAAGATCTTGGAGTGTCCCATCTGCCTGGAGTTGATCAAGGAACCTGTCTCCACAAAGTGTGACCACATATTTTGCAAATTTTGCATGCTGAAACTTCTCAACCAGAAGAAAGGGCCTTCACAGTGTCCCTTGTGTAAGAATGATATAACCAAAAGGTGGCCTTAGTAACAAATGGGATAGAGGCTTGATTGGACACTGCTCAGATCCAACATCCTTTGAGGGTCCCCTATGTCCAGGATTTGATCAGCACCTCAGACAAAGAGTCAGGGTTACTGAGGCACAGCTTGGTGACTTGGAGGGCCCAGCTCCTATTGTGTGTGAATACGATCTGGATGTGGAACATGGTGGCCCAGTGGTGGAACACAGACAGAGGCAGAGGCAGTGAGGCAACGGAGGGAGCTTGCAGAG" },
+  lacz_ecoli: { name:"E. coli lacZ fragment", seq:
+    "ATGACCATGATTACGGATTCACTGGCCGTCGTTTTACAACGTCGTGACTGGGAAAACCCTGGCGTTACCCAACTTAATCGCCTTGCAGCACATCCCCCTTTCGCCAGCTGGCGTAATAGCGAAGAGGCCCGCACCGATCGCCCTTCCCAACAGTTGCGCAGCCTGAATGGCGAATGGCGCTTTGCCTGGTTTCCGGCACCAGAAGCGGTGCCGGAAAGCTGGCTGGAGTGCGATCTTCCTGAGGCCGATACTGTCGTCGTCCCCTCAAACTGGCAGATGCACGGTTACGATGCGCCCATCTACACCAACGTGACCTATCCCATTACGGTCAATCCGCCGTTTGTTCCCACGGAGAATCCGACGGGTTGTTACTCGCTCACATTTAATGTTGATGAAAGCTGGCTACAGGAAGGCCAGACGCGAATTATTTTTGATGGCGTTAACTCGGCGTTTCATCTGTGGTGCAACGGGCGCTGGGTCGGTTACGGCCAGGACAGTCGTTTGCCGTCTGAATTTGACCTGAGCGCATTTTTACGCGCCGGAGAAAACCGCCTCGCGGTGATGGTGCTGCGTTGGAGTGACGGCAGTTATCTGGAAGAT" },
+  python_sample: { name:"Python script sample (48 bp)", seq: "ATCGATCGAATCGATCGATCGATCGTGCATGCATGGCTAGCTAGCTAG" }
+};
+const CODON = {TTT:'F',TTC:'F',TTA:'L',TTG:'L',CTT:'L',CTC:'L',CTA:'L',CTG:'L',ATT:'I',ATC:'I',ATA:'I',ATG:'M',GTT:'V',GTC:'V',GTA:'V',GTG:'V',TCT:'S',TCC:'S',TCA:'S',TCG:'S',CCT:'P',CCC:'P',CCA:'P',CCG:'P',ACT:'T',ACC:'T',ACA:'T',ACG:'T',GCT:'A',GCC:'A',GCA:'A',GCG:'A',TAT:'Y',TAC:'Y',TAA:'*',TAG:'*',CAT:'H',CAC:'H',CAA:'Q',CAG:'Q',AAT:'N',AAC:'N',AAA:'K',AAG:'K',GAT:'D',GAC:'D',GAA:'E',GAG:'E',TGT:'C',TGC:'C',TGA:'*',TGG:'W',CGT:'R',CGC:'R',CGA:'R',CGG:'R',AGT:'S',AGC:'S',AGA:'R',AGG:'R',GGT:'G',GGC:'G',GGA:'G',GGG:'G'};
+
+let state = { header:"Human BRCA1 fragment", dna:DEMOS.brca1_human.seq, guides:[], sel:0, edited:null, editInfo:null };
+
+// ============ utils ============
+const $ = id => document.getElementById(id);
+const clean = s => s.toUpperCase().replace(/[^ATCGN]/g,'');
+const revcomp = s => s.split('').reverse().map(b=>({A:'T',T:'A',G:'C',C:'G',N:'N'}[b]||'N')).join('');
+function gc(s){ if(!s.length) return 0; return 100*(s.split('').filter(b=>b==='G'||b==='C').length/s.length); }
+function pamRegex(pam, guideLen){
+  const m = {NGG:'[ATCG]GG', NAG:'[ATCG]AG', NNGRRT:'[ATCG][ATCG]G[AG][AG]T', TTTV:'TTT[ACG]', NGA:'[ATCG]GA'};
+  return m[pam] || pam;
+}
+// Port of find_crispr_guides (forward) + reverse-strand extension
+function findGuides(dna, pamKey, customRe, guideLen, cutOffset, strands){
+  const pam = pamKey==='custom' ? customRe : pamRegex(pamKey);
+  const guides = [];
+  const scan = (seq, strand) => {
+    // lookahead: (guide)(PAM) — overlapping-safe like Python's (?=([ATCG]{20})[ATCG]GG)
+    const re = new RegExp(`(?=([ATCG]{${guideLen}})(${pam}))`, 'g');
+    let m;
+    while((m = re.exec(seq))){
+      const start = m.index;
+      const guide = m[1];
+      if(guide.length !== guideLen){ re.lastIndex = start+1; continue; }
+      const cut = start + guideLen - cutOffset;
+      guides.push({ guide_dna:guide, guide_rna:guide.replace(/T/g,'U'), pam:m[2], start_index:start, cut_site:cut, strand });
+      re.lastIndex = start+1; // allow overlaps
+      if(guides.length > 2000) break;
+    }
+  };
+  if(strands==='forward'||strands==='both') scan(dna,'+');
+  if(strands==='reverse'||strands==='both'){
+    const rc = revcomp(dna);
+    const tmp = [];
+    const before = guides.length;
+    scan(rc,'-');
+    // map reverse-strand hits back to forward coords
+    for(let i=before;i<guides.length;i++){
+      const g = guides[i];
+      const rcStart = g.start_index, rcCut = g.cut_site;
+      const fwdStart = dna.length - (rcStart + guideLen + pamLen(pamKey, customRe));
+      g.start_index = fwdStart; g.cut_site = dna.length - rcCut;
+    }
+  }
+  guides.sort((a,b)=>a.cut_site-b.cut_site);
+  return guides;
+}
+function pamLen(pamKey, customRe){
+  if(pamKey==='NGG'||pamKey==='NAG'||pamKey==='NGA') return 3;
+  if(pamKey==='NNGRRT') return 6;
+  if(pamKey==='TTTV') return 4;
+  // best-effort for custom: count literal chars
+  const m = (customRe||'').replace(/\[.*?\]/g,'N');
+  return m.length || 3;
+}
+// Port of simulate_nhej_knockout + extensions
+function applyEdit(dna, guide, type, p){
+  const cut = guide.cut_site;
+  if(cut<0||cut>dna.length) throw new Error('Cut site out of bounds');
+  if(type==='nhej_del') return { seq: dna.slice(0,cut)+dna.slice(cut+p.delLen), desc:`NHEJ deletion of ${p.delLen} bp at ${cut}` };
+  if(type==='nhej_ins'){ const ins = clean(p.insSeq)||'A'; return { seq: dna.slice(0,cut)+ins+dna.slice(cut), desc:`NHEJ insertion of ${ins} (${ins.length} bp) at ${cut}` }; }
+  if(type==='sub'){ const rep = clean(p.subSeq); return { seq: dna.slice(0,cut)+rep+dna.slice(cut+p.subLen), desc:`Substitution: ${p.subLen} bp at ${cut} → ${rep}` }; }
+  if(type==='hdr'){ const t = clean(p.hdrTemplate); return { seq: dna.slice(0,Math.max(0,cut-p.hdrFlank))+t+dna.slice(cut+p.hdrFlank), desc:`HDR: ±${p.hdrFlank} bp around ${cut} → donor ${t}` }; }
+  if(type==='cbe'||type==='abe'){
+    const gStart = guide.strand==='+' ? guide.start_index : null;
+    let seq = dna.split('');
+    // window defined on guide 5'->3'; map to forward coords
+    const from = p.winFrom-1, to = p.winTo-1;
+    let edits = 0;
+    for(let i=from;i<=to;i++){
+      let fwdPos = guide.strand==='+' ? guide.start_index+i : guide.start_index+(guide.guide_dna.length-1-i);
+      // for reverse strand, guide_dna is rc; base on fwd strand is complement
+      let fwdBase = seq[fwdPos];
+      if(type==='cbe'){
+        const want = guide.strand==='+' ? 'C' : 'G'; // C on guide == G on fwd for '-' strand
+        if(fwdBase===want){ seq[fwdPos] = guide.strand==='+' ? 'T' : 'A'; edits++; }
+      } else {
+        const want = guide.strand==='+' ? 'A' : 'T';
+        if(fwdBase===want){ seq[fwdPos] = guide.strand==='+' ? 'G' : 'C'; edits++; }
+      }
+    }
+    return { seq: seq.join(''), desc:`${type==='cbe'?'CBE C→T':'ABE A→G'} window ${p.winFrom}-${p.winTo}, ${edits} base(s) converted` };
+  }
+}
+function translate(dna, frame){
+  let prot='';
+  for(let i=frame;i+3<=dna.length;i+=3){ prot += CODON[dna.slice(i,i+3)] || 'X'; }
+  return prot;
+}
+function longestORF(dna){
+  let best={prot:'',start:-1,frame:0};
+  for(let f=0;f<3;f++){
+    const prot = translate(dna,f);
+    for(let i=0;i<prot.length;i++){
+      if(prot[i]==='M'){
+        const stop = prot.indexOf('*',i);
+        const orf = stop===-1 ? prot.slice(i) : prot.slice(i,stop+1);
+        if(orf.length>best.prot.length) best={prot:orf,start:f+i*3,frame:f};
+      }
+    }
+  }
+  return best;
+}
+function colorize(seq, start0){
+  // start0: genomic index of seq[0], used to overlay guide/pam highlights
+  return seq; // highlighting done in renderSeq with spans
+}
+function renderColored(el, seq, guides, selGuide, editedRegions){
+  const wrap = parseInt($('wrapN').value)||80;
+  let html='', line='';
+  const inGuide = idx => selGuide && idx>=selGuide.start_index && idx<selGuide.start_index+parseInt($('guideLen').value||20);
+  const inPam = idx => {
+    if(!selGuide) return false;
+    const gl = parseInt($('guideLen').value||20);
+    // pam sits right after guide on + strand
+    if(selGuide.strand==='+') return idx>=selGuide.start_index+gl && idx<selGuide.start_index+gl+selGuide.pam.length;
+    // '-' strand: pam is upstream on forward coords
+    return idx>=selGuide.start_index-selGuide.pam.length && idx<selGuide.start_index;
+  };
+  for(let i=0;i<seq.length;i++){
+    const b = seq[i];
+    let cls = b==='A'?'bA':b==='T'?'bT':b==='G'?'bG':b==='C'?'bC':'bN';
+    let extra='';
+    if(selGuide){
+      if(i===selGuide.cut_site) extra+='<span class="hl-cut" title="Cas cut">|</span>';
+      if(inGuide(i)) cls+=' hl-guide';
+      if(inPam(i)) cls+=' hl-pam';
+    }
+    line += `<span class="${cls}">${b}</span>`;
+    if((i+1)%wrap===0 || i===seq.length-1){
+      const num = String(i+1).padStart(6,' ');
+      html += `<span style="color:#475569">${num} </span>${line}\n`;
+      line='';
+    }
+  }
+  el.innerHTML = html;
+}
+
+// ============ FASTA ============
+let records = [];
+function parseFasta(text){
+  const recs=[]; let h=null, s='';
+  text.split(/\r?\n/).forEach(line=>{
+    line=line.trim();
+    if(!line) return;
+    if(line.startsWith('>')){ if(h!==null) recs.push({header:h,seq:clean(s)}); h=line.slice(1); s=''; }
+    else s+=line;
+  });
+  if(h!==null) recs.push({header:h,seq:clean(s)});
+  return recs.filter(r=>r.seq.length);
+}
+function refreshRecordSelect(){
+  const sel=$('recordSelect'); sel.innerHTML='';
+  records.forEach((r,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${r.header.slice(0,60)} (${r.seq.length} bp)`; sel.appendChild(o); });
+  if(records.length){ sel.value = records.length-1; }
+}
+
+// ============ main flows ============
+function setDNA(header, seq){
+  state.header=header; state.dna=clean(seq); state.edited=null; state.editInfo=null;
+  records.push({header, seq:state.dna}); refreshRecordSelect();
+  rescan(); renderAll();
+}
+function rescan(){
+  const pamKey=$('pamSelect').value;
+  try{
+    state.guides = findGuides(state.dna, pamKey, $('pamCustom').value||'[ATCG]GG', parseInt($('guideLen').value)||20, parseInt($('cutOffset').value)||3, $('strandOpt').value);
+  }catch(e){ state.guides=[]; console.warn(e); }
+  if(state.sel>=state.guides.length) state.sel=0;
+  renderGuides(); renderSeq(); renderTranslation();
+}
+function renderSeq(){
+  const dna=state.dna, g=state.guides[state.sel];
+  $('seqStats').innerHTML = `<div><b>${state.header}</b></div><div>Length <b>${dna.length}</b> bp</div><div>GC <b>${gc(dna).toFixed(1)}%</b></div><div>Guides <b>${state.guides.length}</b></div>`;
+  const win=parseInt($('winSize').value)||80;
+  let seq=dna, note='';
+  if(g && dna.length>win*2+40){ const s=Math.max(0,g.cut_site-win), e=Math.min(dna.length,g.cut_site+win); seq=dna.slice(s,e); note=` (window ${s+1}–${e} around cut ${g.cut_site})`; }
+  renderColored($('seqView'), seq, state.guides, g?{...g,start_index: seq===dna?g.start_index: g.start_index-Math.max(0,g.cut_site-win), cut_site: seq===dna?g.cut_site:win}:null);
+  if(note) $('seqView').innerHTML = `<span style="color:#475569">${note}</span>\n` + $('seqView').innerHTML;
+}
+function renderGuides(){
+  const tb=$('guideBody'); tb.innerHTML='';
+  $('guideCount').textContent = state.guides.length;
+  state.guides.slice(0,500).forEach((g,i)=>{
+    const tr=document.createElement('tr'); if(i===state.sel) tr.className='sel';
+    tr.innerHTML=`<td>${i+1}</td><td>${g.strand}</td><td class="mono">${g.guide_rna}</td><td>${g.start_index}</td><td><b>${g.cut_site}</b></td><td class="mono">${g.pam}</td>`;
+    tr.onclick=()=>{ state.sel=i; renderGuides(); renderSeq(); };
+    tb.appendChild(tr);
+  });
+  if(state.guides.length>500){ const tr=document.createElement('tr'); tr.innerHTML=`<td colspan="6" class="small">… ${state.guides.length-500} more (showing first 500)</td>`; tb.appendChild(tr); }
+}
+function doEdit(){
+  const g=state.guides[state.sel];
+  if(!g){ alert('No guide selected — adjust PAM/rules or load a different sequence.'); return; }
+  const type=$('editType').value;
+  const p={ delLen:parseInt($('delLen').value)||1, insSeq:$('insSeq').value||'A', subLen:parseInt($('subLen').value)||1, subSeq:$('subSeq').value||'A',
+    hdrTemplate:$('hdrTemplate').value||'', hdrFlank:parseInt($('hdrFlank').value)||5,
+    winFrom:parseInt(($('cbeFrom')||{}).value)||4, winTo:parseInt(($('cbeTo')||{}).value)||8 };
+  if(type==='abe'){ p.winFrom=parseInt($('abeFrom').value)||4; p.winTo=parseInt($('abeTo').value)||8; }
+  try{
+    const {seq,desc}=applyEdit(state.dna,g,type,p); // seq mirrors simulate_nhej_knockout for nhej_del
+    state.edited=seq; state.editInfo={guide:g,type,desc,delta:seq.length-state.dna.length};
+  }catch(e){ alert(e.message); return; }
+  renderEdit(); renderTranslation();
+}
+function renderEdit(){
+  const g0=state.guides[state.sel];
+  if(!state.edited||!g0) return;
+  const d=state.editInfo.delta;
+  const fs = d%3!==0 ? '<span class="pill bad">FRAMESHIFT (indel % 3 ≠ 0)</span>' : '<span class="pill ok">in-frame (indel % 3 = 0)</span>';
+  const ko = (state.editInfo.type==='nhej_del'||d%3!==0) ? '<span class="pill warn">likely knockout</span>' : '<span class="pill ok">protein likely intact</span>';
+  $('editStats').innerHTML=`<div>${state.editInfo.desc}</div><div>WT <b>${state.dna.length}</b> → edited <b>${state.edited.length}</b> (Δ <b>${d>=0?'+':''}${d}</b>)</div><div>${fs} ${ko}</div>`;
+  // alignment window
+  const win=parseInt($('winSize').value)||80;
+  const cut=g0.cut_site;
+  const s=Math.max(0,cut-win), e=Math.min(state.dna.length,cut+win);
+  const wtW=state.dna.slice(s,e);
+  // map edited window approximately
+  const es=Math.max(0,cut-win), ee=Math.min(state.edited.length,cut+win+d);
+  const edW=state.edited.slice(es,ee);
+  $('alignView').textContent=`WT    [${s+1}-${e}] ${wtW}\nEDITED[${es+1}-${ee}] ${edW}\n${' '.repeat(14)}${'^'.padStart(Math.min(wtW.length,cut-s+1))} cut @ ${cut} (${g0.strand} strand, guide #${state.sel+1})`;
+  renderColored($('editedView'), state.edited.length>4000?state.edited.slice(0,4000):state.edited, [], null);
+  if(state.edited.length>4000) $('editedView').innerHTML='<span style="color:#475569">showing first 4000 bp of '+state.edited.length+'</span>\n'+$('editedView').innerHTML;
+}
+function renderTranslation(){
+  const f=$('frameSel').value;
+  let wtP, edP, note='';
+  if(f==='orf'){
+    const w=longestORF(state.dna), e=state.edited?longestORF(state.edited):null;
+    wtP=w.prot; edP=e?e.prot:'(no edit yet)';
+    note=`WT longest ORF: ${w.prot.length} aa, starts at nt ${w.start+1} (frame ${w.frame+1})${e?` · Edited longest ORF: ${e.prot.length} aa, starts at nt ${e.start+1} (frame ${e.frame+1})`:''}`;
+  } else {
+    const fi=parseInt(f);
+    wtP=translate(state.dna,fi); edP=state.edited?translate(state.edited,fi):'(no edit yet)';
+    note=`Frame ${fi+1}: ${wtP.length} aa (WT)${state.edited?` vs ${edP.length} aa (edited)`:''}. * = stop codon.`;
+    if(state.edited){
+      const wStop=wtP.indexOf('*'), eStop=edP.indexOf('*');
+      if(eStop!==-1&& (wStop===-1||eStop<wStop)) note+=` ⚠️ Premature stop in edited (pos ${eStop+1} vs WT ${wStop===-1?'none':wStop+1}) — consistent with knockout.`;
+      else if(edP.length!==wtP.length) note+=` Length changed by ${edP.length-wtP.length} aa.`;
+    }
+  }
+  // --- pairwise alignment + per-residue highlight (handles indels / length change) ---
+  if(!state.edited || edP.startsWith('(')){
+    $('wtProt').textContent=wtP||'(empty)'; $('edProt').textContent=edP||'(empty)';
+  } else {
+    const al = alignProteins(wtP, edP);
+    $('wtProt').innerHTML = renderAlignedSide(al.aw, al.bw, true);
+    $('edProt').innerHTML = renderAlignedSide(al.aw, al.bw, false);
+    note += ` Alignment: ${al.matches}/${al.alen} identical (${(100*al.matches/al.alen).toFixed(1)}%). ` +
+      `Yellow = substitution, grey = gap (indel-shifted), red * = stop.`;
+  }
+  $('protNote').textContent=note;
+  $('protStats').innerHTML=`<div>WT protein <b>${wtP.startsWith('(')?'—':wtP.length}</b> aa</div><div>Edited <b>${edP.startsWith('(')?'—':edP.length}</b> aa</div>${state.edited?`<div>Δ <b>${edP.startsWith('(')?'—':(edP.length-wtP.length)}</b> aa</div>`:''}` +
+    (state.edited?`<div><span class="aa aa-mis">sub</span> <span class="aa aa-gap">gap</span> <span class="aa aa-stop">*</span></div>`:'');
+}
+// Needleman-Wunsch global alignment for protein strings.
+// Solves exactly your concern: a naive position-by-position diff breaks on
+// frameshifts (lengths differ, downstream residues all shift). Alignment inserts
+// gaps so truly conserved residues still line up, and only real changes highlight.
+function alignProteins(a, b){
+  const MATCH=2, MIS=-1, GAP=-2;
+  const n=a.length, m=b.length;
+  if(n*m > 4e6){ // fallback for huge proteins: positional diff, no gaps
+    const L=Math.max(n,m); let matches=0, aw='', bw='';
+    for(let i=0;i<L;i++){ const x=a[i]||'-', y=b[i]||'-'; aw+=x; bw+=y; if(x===y) matches++; }
+    return {aw, bw, matches, alen:L};
+  }
+  const dp=new Int16Array((n+1)*(m+1));
+  const idx=(i,j)=>i*(m+1)+j;
+  for(let i=1;i<=n;i++) dp[idx(i,0)]=-i*2;
+  for(let j=1;j<=m;j++) dp[idx(0,j)]=-j*2;
+  for(let i=1;i<=n;i++) for(let j=1;j<=m;j++){
+    const s = a[i-1]===b[j-1]?MATCH:MIS;
+    dp[idx(i,j)]=Math.max(dp[idx(i-1,j)]+GAP, dp[idx(i,j-1)]+GAP, dp[idx(i-1,j-1)]+s);
+  }
+  let i=n, j=m, aw='', bw='', matches=0;
+  while(i>0||j>0){
+    if(i>0&&j>0&&(dp[idx(i,j)]===dp[idx(i-1,j-1)]+((a[i-1]===b[j-1])?MATCH:MIS))){ aw=a[i-1]+aw; bw=b[j-1]+bw; if(a[i-1]===b[j-1]) matches++; i--; j--; }
+    else if(i>0&&dp[idx(i,j)]===dp[idx(i-1,j)]+GAP){ aw=a[i-1]+aw; bw='-'+bw; i--; }
+    else { aw='-'+aw; bw=b[j-1]+bw; j--; }
+  }
+  return {aw, bw, matches, alen:aw.length};
+}
+function escHtml(c){ return c==='*'?'*':c; }
+function renderAlignedSide(aw, bw, isWT){
+  let html='';
+  for(let k=0;k<aw.length;k++){
+    const x = isWT?aw[k]:bw[k], y = isWT?bw[k]:aw[k];
+    if(x==='-') html+=`<span class="aa aa-gap" title="gap (indel)">−</span>`;
+    else if(y==='-') html+=`<span class="aa aa-gap" title="opposite side has a gap (indel-shifted)">${escHtml(x)}</span>`;
+    else if(x===y) html+=`<span class="aa aa-match">${escHtml(x)}</span>`;
+    else if(x==='*'||y==='*') html+=`<span class="aa aa-stop" title="stop codon change">${escHtml(x)}</span>`;
+    else html+=`<span class="aa aa-mis" title="substitution: WT ${escHtml(aw[k])} → edited ${escHtml(bw[k])}">${escHtml(x)}</span>`;
+  }
+  return html;
+}
+
+// ============ events ============
+$('loadDemo').onclick=()=>{ const k=$('genomeSelect').value; setDNA(DEMOS[k].name, DEMOS[k].seq); };
+$('shuffleBtn').onclick=()=>{ const n=400; let s=''; const b='ATCG'; for(let i=0;i<n;i++) s+=b[Math.floor(Math.random()*4)]; setDNA('Random synthetic DNA (400 bp)',s); };
+$('ncbiBtn').onclick=async()=>{
+  const id=$('ncbiId').value.trim(); if(!id) return;
+  $('ncbiStatus').textContent='Fetching…';
+  try{
+    const url=`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&id=${encodeURIComponent(id)}&rettype=fasta&retmode=text`;
+    const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
+    const t=await r.text();
+    const recs=parseFasta(t);
+    if(!recs.length) throw new Error('No sequence returned — check accession.');
+    $('ncbiStatus').textContent=`Fetched ${recs[0].header.slice(0,80)} (${recs[0].seq.length} bp)`;
+    setDNA('NCBI '+recs[0].header, recs[0].seq);
+  }catch(e){ $('ncbiStatus').textContent='Fetch failed: '+e.message+' (CORS/network or bad ID). Try paste instead.'; }
+};
+$('fastaFile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ const recs=parseFasta(String(r.result)); if(!recs.length){alert('No valid FASTA records found.');return;} setDNA(recs[recs.length-1].header, recs[recs.length-1].seq); };
+  r.readAsText(f);
+};
+$('parsePaste').onclick=()=>{ const recs=parseFasta($('fastaPaste').value); if(!recs.length){alert('No valid FASTA found. Need ">header" + sequence lines.');return;} setDNA(recs[recs.length-1].header, recs[recs.length-1].seq); };
+$('recordSelect').onchange=e=>{ const r=records[parseInt(e.target.value)]; if(r){ state.header=r.header; state.dna=r.seq; state.edited=null; rescan(); } };
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+  $('tab-file').style.display=b.dataset.tab==='file'?'block':'none';
+  $('tab-paste').style.display=b.dataset.tab==='paste'?'block':'none';
+});
+$('pamSelect').onchange=()=>{ $('pamCustom').style.display=$('pamSelect').value==='custom'?'block':'none'; rescan(); };
+$('editType').onchange=()=>{
+  document.querySelectorAll('.eparams').forEach(d=>d.style.display='none');
+  const m={nhej_del:'params_nhej_del',nhej_ins:'params_nhej_ins',sub:'params_sub',hdr:'params_hdr',cbe:'params_cbe',abe:'params_abe'};
+  $(m[$('editType').value]).style.display='block';
+};
+['guideLen','cutOffset','strandOpt','pamCustom'].forEach(id=>$(id).onchange=rescan);
+$('rescanBtn').onclick=rescan;
+$('applyEdit').onclick=doEdit;
+$('resetEdit').onclick=()=>{ state.edited=null; state.editInfo=null; $('editStats').innerHTML=''; $('alignView').textContent='No edit yet — select a guide and press Apply.'; $('editedView').textContent=''; renderTranslation(); };
+$('frameSel').onchange=renderTranslation;
+$('winSize').onchange=()=>{renderSeq();renderEdit();};
+$('wrapN').onchange=()=>{renderSeq();};
+
+// init
+records=[]; setDNA(DEMOS.brca1_human.name, DEMOS.brca1_human.seq);
+</script>
+</body>
+</html>
