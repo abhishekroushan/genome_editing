@@ -83,6 +83,15 @@ sh scripts/sync.sh --reverse # index.html -> frontend (if you edited the root co
 sh scripts/sync.sh --check   # exit 1 if the two files differ (useful in CI)
 ```
 
+A pre-commit hook auto-syncs on commit: if `frontend/genome_editing.html` is
+staged and `index.html` differs, the hook re-runs the sync and stages
+`index.html` too. Install it (`.git/hooks/` is local to each clone, so every
+checkout needs this once):
+
+```sh
+cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
 ## Notes & limitations
 
 - Demo "genomes" are short gene fragments, not full genomes (a full human genome is ~3 GB

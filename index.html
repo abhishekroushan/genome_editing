@@ -25,6 +25,7 @@
   button:disabled{opacity:.4; cursor:not-allowed;}
   .row { display:flex; gap:8px;} .row > * { flex:1;}
   .seq-view { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.7; word-break:break-all; background:#0b1220; border:1px solid #334155; border-radius:8px; padding:10px; max-height:260px; overflow:auto; white-space:pre-wrap;}
+  .seq-view.nowrap { white-space:pre; word-break:normal; overflow-x:auto; }
   .bA{color:#4ade80;} .bT{color:#f87171;} .bG{color:#60a5fa;} .bC{color:#fbbf24;} .bN{color:#94a3b8;}
   .hl-guide{background:rgba(34,211,238,.22); border-bottom:2px solid var(--accent); border-radius:3px;}
   .hl-pam{background:rgba(167,139,250,.35); border-bottom:2px solid var(--accent2); border-radius:3px;}
@@ -48,11 +49,12 @@
   .tabs{display:flex; gap:6px; margin-bottom:8px;}
   .tabs button{margin:0;}
   .tabs button.active{outline:2px solid #fff;}
-  .aa { padding:0 1px; border-radius:3px; }
+  .aa { padding:0; border-radius:3px; }
   .aa-match { color:#cbd5e1; }
   .aa-mis { background:rgba(251,191,36,.45); color:#000; font-weight:700; }
   .aa-gap { background:#334155; color:#64748b; }
   .aa-stop { background:rgba(248,113,113,.6); color:#000; font-weight:800; }
+  .ruler { color:#38bdf8; }
 </style>
 </head>
 <body>
@@ -204,10 +206,8 @@
         <option value="orf">Longest ORF (ATG→stop) — auto</option>
       </select>
       <div class="stat" id="protStats"></div>
-      <div class="row">
-        <div><h3>WT protein</h3><div class="seq-view mono" id="wtProt"></div></div>
-        <div><h3>Edited protein</h3><div class="seq-view mono" id="edProt"></div></div>
-      </div>
+      <div><h3>WT protein</h3><div class="seq-view mono nowrap" id="wtProt"></div></div>
+      <div style="margin-top:10px"><h3>Edited protein</h3><div class="seq-view mono nowrap" id="edProt"></div></div>
       <div class="small" id="protNote"></div>
     </div>
   </div>
@@ -337,9 +337,31 @@ function colorize(seq, start0){
   // start0: genomic index of seq[0], used to overlay guide/pam highlights
   return seq; // highlighting done in renderSeq with spans
 }
-function renderColored(el, seq, guides, selGuide, editedRegions){
+// Residue-number ruler shown once at the top of each sequence display.
+// width: number of residues on a full line (wrap width, or seq length if shorter).
+// offset: 0-based genomic coordinate of the first displayed residue (so a
+// windowed view still shows absolute positions). Labels are 0-based to match
+// guide start_index / cut_site coordinates. withPrefix: DNA lines carry a
+// 7-char ("   num ") line-number prefix, so the ruler needs the same indent.
+function buildRuler(width, offset, withPrefix){
+  offset = offset || 0;
+  const nums = new Array(width).fill(' ');
+  const ticks = new Array(width).fill(' ');
+  for(let pos=0; pos<width; pos+=10){
+    const label = String(offset + pos);
+    for(let k=0; k<label.length && pos+k<width; k++) nums[pos+k] = label[k];
+    ticks[pos] = '|';
+  }
+  const pad = withPrefix ? '       ' : '';
+  return `<span class="ruler" title="0-based residue numbers (tick every 10)">${pad}${nums.join('')}\n${pad}${ticks.join('')}\n</span>`;
+}
+function renderColored(el, seq, guides, selGuide, editedRegions, startOffset){
   const wrap = parseInt($('wrapN').value)||80;
+  startOffset = startOffset || 0;
   let html='', line='';
+  // one ruler at the top, spanning a full line (or the whole seq if shorter)
+  const rulerW = Math.min(wrap, seq.length);
+  if(seq.length) html += buildRuler(rulerW, startOffset, true);
   const inGuide = idx => selGuide && idx>=selGuide.start_index && idx<selGuide.start_index+parseInt($('guideLen').value||20);
   const inPam = idx => {
     if(!selGuide) return false;
@@ -360,7 +382,7 @@ function renderColored(el, seq, guides, selGuide, editedRegions){
     }
     line += `<span class="${cls}">${b}</span>`;
     if((i+1)%wrap===0 || i===seq.length-1){
-      const num = String(i+1).padStart(6,' ');
+      const num = String(startOffset+i+1).padStart(6,' ');
       html += `<span style="color:#475569">${num} </span>${line}\n`;
       line='';
     }
@@ -405,9 +427,9 @@ function renderSeq(){
   const dna=state.dna, g=state.guides[state.sel];
   $('seqStats').innerHTML = `<div><b>${state.header}</b></div><div>Length <b>${dna.length}</b> bp</div><div>GC <b>${gc(dna).toFixed(1)}%</b></div><div>Guides <b>${state.guides.length}</b></div>`;
   const win=parseInt($('winSize').value)||80;
-  let seq=dna, note='';
-  if(g && dna.length>win*2+40){ const s=Math.max(0,g.cut_site-win), e=Math.min(dna.length,g.cut_site+win); seq=dna.slice(s,e); note=` (window ${s+1}–${e} around cut ${g.cut_site})`; }
-  renderColored($('seqView'), seq, state.guides, g?{...g,start_index: seq===dna?g.start_index: g.start_index-Math.max(0,g.cut_site-win), cut_site: seq===dna?g.cut_site:win}:null);
+  let seq=dna, note='', offset=0;
+  if(g && dna.length>win*2+40){ const s=Math.max(0,g.cut_site-win), e=Math.min(dna.length,g.cut_site+win); seq=dna.slice(s,e); offset=s; note=` (window ${s+1}–${e} around cut ${g.cut_site})`; }
+  renderColored($('seqView'), seq, state.guides, g?{...g,start_index: seq===dna?g.start_index: g.start_index-offset, cut_site: seq===dna?g.cut_site:win}:null, null, offset);
   if(note) $('seqView').innerHTML = `<span style="color:#475569">${note}</span>\n` + $('seqView').innerHTML;
 }
 function renderGuides(){
@@ -473,7 +495,7 @@ function renderTranslation(){
   }
   // --- pairwise alignment + per-residue highlight (handles indels / length change) ---
   if(!state.edited || edP.startsWith('(')){
-    $('wtProt').textContent=wtP||'(empty)'; $('edProt').textContent=edP||'(empty)';
+    renderPlainProtein($('wtProt'), wtP||'(empty)'); renderPlainProtein($('edProt'), edP||'(empty)');
   } else {
     const al = alignProteins(wtP, edP);
     $('wtProt').innerHTML = renderAlignedSide(al.aw, al.bw, true);
@@ -514,8 +536,20 @@ function alignProteins(a, b){
   return {aw, bw, matches, alen:aw.length};
 }
 function escHtml(c){ return c==='*'?'*':c; }
+// Unaligned protein view (no edit yet): ruler on top + wrapped residues.
+function renderPlainProtein(el, seq){
+  const wrap = parseInt($('wrapN').value)||80;
+  if(!seq || seq.startsWith('(')){ el.textContent=seq||'(empty)'; return; }
+  let html = buildRuler(Math.min(wrap, seq.length), 0, false);
+  for(let i=0;i<seq.length;i++){
+    html += `<span class="aa aa-match">${escHtml(seq[i])}</span>`;
+    if((i+1)%wrap===0 || i===seq.length-1) html += '\n';
+  }
+  el.innerHTML = html;
+}
 function renderAlignedSide(aw, bw, isWT){
-  let html='';
+  const wrap = parseInt($('wrapN').value)||80;
+  let html = buildRuler(Math.min(wrap, aw.length), 0, false);
   for(let k=0;k<aw.length;k++){
     const x = isWT?aw[k]:bw[k], y = isWT?bw[k]:aw[k];
     if(x==='-') html+=`<span class="aa aa-gap" title="gap (indel)">−</span>`;
@@ -523,6 +557,7 @@ function renderAlignedSide(aw, bw, isWT){
     else if(x===y) html+=`<span class="aa aa-match">${escHtml(x)}</span>`;
     else if(x==='*'||y==='*') html+=`<span class="aa aa-stop" title="stop codon change">${escHtml(x)}</span>`;
     else html+=`<span class="aa aa-mis" title="substitution: WT ${escHtml(aw[k])} → edited ${escHtml(bw[k])}">${escHtml(x)}</span>`;
+    if((k+1)%wrap===0 || k===aw.length-1) html+='\n';
   }
   return html;
 }
@@ -568,7 +603,7 @@ $('applyEdit').onclick=doEdit;
 $('resetEdit').onclick=()=>{ state.edited=null; state.editInfo=null; $('editStats').innerHTML=''; $('alignView').textContent='No edit yet — select a guide and press Apply.'; $('editedView').textContent=''; renderTranslation(); };
 $('frameSel').onchange=renderTranslation;
 $('winSize').onchange=()=>{renderSeq();renderEdit();};
-$('wrapN').onchange=()=>{renderSeq();};
+$('wrapN').onchange=()=>{renderSeq();renderEdit();renderTranslation();};
 
 // init
 records=[]; setDNA(DEMOS.brca1_human.name, DEMOS.brca1_human.seq);
