@@ -25,6 +25,7 @@
   button:disabled{opacity:.4; cursor:not-allowed;}
   .row { display:flex; gap:8px;} .row > * { flex:1;}
   .seq-view { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.7; word-break:break-all; background:#0b1220; border:1px solid #334155; border-radius:8px; padding:10px; max-height:260px; overflow:auto; white-space:pre-wrap;}
+  .seq-view.nowrap { white-space:pre; word-break:normal; overflow-x:auto; }
   .bA{color:#4ade80;} .bT{color:#f87171;} .bG{color:#60a5fa;} .bC{color:#fbbf24;} .bN{color:#94a3b8;}
   .hl-guide{background:rgba(34,211,238,.22); border-bottom:2px solid var(--accent); border-radius:3px;}
   .hl-pam{background:rgba(167,139,250,.35); border-bottom:2px solid var(--accent2); border-radius:3px;}
@@ -205,10 +206,8 @@
         <option value="orf">Longest ORF (ATG→stop) — auto</option>
       </select>
       <div class="stat" id="protStats"></div>
-      <div class="row">
-        <div><h3>WT protein</h3><div class="seq-view mono" id="wtProt"></div></div>
-        <div><h3>Edited protein</h3><div class="seq-view mono" id="edProt"></div></div>
-      </div>
+      <div><h3>WT protein</h3><div class="seq-view mono nowrap" id="wtProt"></div></div>
+      <div style="margin-top:10px"><h3>Edited protein</h3><div class="seq-view mono nowrap" id="edProt"></div></div>
       <div class="small" id="protNote"></div>
     </div>
   </div>
