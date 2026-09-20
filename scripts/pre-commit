@@ -1,0 +1,42 @@
+#!/bin/sh
+# pre-commit hook: keep index.html in sync with frontend/genome_editing.html.
+#
+# Versioned copy lives here (scripts/pre-commit); the live hook must be
+# installed into .git/hooks (git does not sync .git/hooks between clones):
+#   cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+# Behaviour on commit:
+# - frontend/genome_editing.html staged and index.html differs from it:
+#   re-run the sync (frontend -> index.html) and stage index.html too.
+# - index.html staged but differs from the frontend file (root copy edited
+#   directly): block the commit and point at scripts/sync.sh --reverse.
+set -eu
+
+FRONTEND="frontend/genome_editing.html"
+INDEX="index.html"
+
+git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
+[ -f "$FRONTEND" ] && [ -f "$INDEX" ] || exit 0
+
+staged="$(git diff --cached --name-only)"
+in_sync() { cmp -s "$FRONTEND" "$INDEX"; }
+
+case "$staged" in
+  *"$FRONTEND"*)
+    if ! in_sync; then
+      sh scripts/sync.sh
+      git add "$INDEX"
+      echo "pre-commit: $INDEX was out of sync - re-synced from $FRONTEND and staged."
+    fi
+    ;;
+  *"$INDEX"*)
+    if ! in_sync; then
+      echo "pre-commit: $INDEX differs from $FRONTEND." >&2
+      echo "The root copy is generated - either edit $FRONTEND instead, or run:" >&2
+      echo "  sh scripts/sync.sh --reverse   # keep the index.html edit, sync it back" >&2
+      echo "  sh scripts/sync.sh             # discard the index.html edit" >&2
+      exit 1
+    fi
+    ;;
+esac
+exit 0
